@@ -143,7 +143,7 @@ impl Shell {
 
     fn exec_path(&mut self, command: &Command) -> Result<()> {
         match self.in_path(&command.name) {
-            Some(_entry) => {}
+            Some(_entry) => {} // TODO: Start here for executing programs
             None => writeln!(self.stdout, "{}: command not found", command.name)?,
         }
         Ok(())
