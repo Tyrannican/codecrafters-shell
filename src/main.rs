@@ -69,6 +69,10 @@ impl Shell {
                 let code = command.args[0].parse::<i32>()?;
                 std::process::exit(code);
             }
+            "echo" => {
+                let output = command.args.join(" ");
+                writeln!(self.stdout, "{output}")?;
+            }
             _ => writeln!(self.stdout, "{}: command not found", command.name)?,
         }
         self.stdout.flush()?;
