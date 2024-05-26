@@ -3,6 +3,40 @@ use std::io::{self, Write};
 
 use anyhow::Result;
 
+pub(crate) struct Command {
+    name: String,
+    args: Vec<String>,
+}
+
+impl Command {
+    pub(crate) fn new(input: String) -> Self {
+        let input = input.trim();
+
+        let (name, args) = match input.split_once(' ') {
+            Some((name, rest)) => {
+                let args = rest
+                    .split(' ')
+                    .filter_map(|arg| {
+                        let arg = arg.to_string();
+                        if arg.is_empty() {
+                            return None;
+                        }
+                        Some(arg)
+                    })
+                    .collect::<Vec<String>>();
+
+                (name, args)
+            }
+            None => (input, vec![]),
+        };
+
+        Self {
+            name: name.to_string(),
+            args,
+        }
+    }
+}
+
 pub(crate) struct Shell {
     stdin: io::Stdin,
     stdout: io::Stdout,
@@ -23,13 +57,20 @@ impl Shell {
 
             let mut input = String::new();
             self.stdin.read_line(&mut input)?;
-            self.process(input)?;
+
+            let command = Command::new(input);
+            self.process(command)?;
         }
     }
 
-    fn process(&mut self, input: String) -> Result<()> {
-        let input = input.trim();
-        writeln!(self.stdout, "{input}: command not found")?;
+    fn process(&mut self, command: Command) -> Result<()> {
+        match command.name.as_str() {
+            "exit" => {
+                let code = command.args[0].parse::<i32>()?;
+                std::process::exit(code);
+            }
+            _ => writeln!(self.stdout, "{}: command not found", command.name)?,
+        }
         self.stdout.flush()?;
 
         Ok(())
