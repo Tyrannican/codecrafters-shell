@@ -3,6 +3,13 @@ use std::io::{self, Write};
 
 use anyhow::Result;
 
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum ShellBuiltin {
+    Echo,
+    Exit,
+    Type,
+}
+
 pub(crate) struct Command {
     name: String,
     args: Vec<String>,
@@ -37,6 +44,15 @@ impl Command {
     }
 }
 
+pub(crate) fn is_builtin(name: &str) -> Option<ShellBuiltin> {
+    match name {
+        "echo" => Some(ShellBuiltin::Echo),
+        "exit" => Some(ShellBuiltin::Exit),
+        "type" => Some(ShellBuiltin::Type),
+        _ => None,
+    }
+}
+
 pub(crate) struct Shell {
     stdin: io::Stdin,
     stdout: io::Stdout,
@@ -59,23 +75,41 @@ impl Shell {
             self.stdin.read_line(&mut input)?;
 
             let command = Command::new(input);
-            self.process(command)?;
+            self.exec(command)?;
         }
     }
 
-    fn process(&mut self, command: Command) -> Result<()> {
-        match command.name.as_str() {
-            "exit" => {
+    fn exec(&mut self, command: Command) -> Result<()> {
+        if let Some(builtin) = is_builtin(&command.name) {
+            self.exec_builtin(builtin, &command)?;
+        } else {
+            writeln!(self.stdout, "{}: command not found", command.name)?;
+        }
+
+        self.stdout.flush()?;
+
+        Ok(())
+    }
+
+    fn exec_builtin(&mut self, builtin: ShellBuiltin, command: &Command) -> Result<()> {
+        match builtin {
+            ShellBuiltin::Exit => {
                 let code = command.args[0].parse::<i32>()?;
                 std::process::exit(code);
             }
-            "echo" => {
+            ShellBuiltin::Echo => {
                 let output = command.args.join(" ");
                 writeln!(self.stdout, "{output}")?;
             }
-            _ => writeln!(self.stdout, "{}: command not found", command.name)?,
+            ShellBuiltin::Type => {
+                let type_arg = &command.args[0];
+                if is_builtin(type_arg).is_some() {
+                    writeln!(self.stdout, "{type_arg} is a shell builtin")?;
+                } else {
+                    writeln!(self.stdout, "{type_arg} not found")?;
+                }
+            }
         }
-        self.stdout.flush()?;
 
         Ok(())
     }
