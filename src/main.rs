@@ -17,14 +17,14 @@ impl Shell {
     }
 
     pub(crate) fn run(&mut self) -> Result<()> {
-        write!(self.stdout, "$ ")?;
-        self.stdout.flush()?;
+        loop {
+            write!(self.stdout, "$ ")?;
+            self.stdout.flush()?;
 
-        let mut input = String::new();
-        self.stdin.read_line(&mut input)?;
-        self.process(input)?;
-
-        Ok(())
+            let mut input = String::new();
+            self.stdin.read_line(&mut input)?;
+            self.process(input)?;
+        }
     }
 
     fn process(&mut self, input: String) -> Result<()> {
