@@ -28,7 +28,9 @@ impl Shell {
     }
 
     fn process(&mut self, input: String) -> Result<()> {
-        write!(self.stdout, "{input}: command not found")?;
+        let input = input.trim();
+        writeln!(self.stdout, "{input}: command not found")?;
+        self.stdout.flush()?;
 
         Ok(())
     }
