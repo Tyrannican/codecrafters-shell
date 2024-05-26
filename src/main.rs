@@ -1,5 +1,6 @@
 #[allow(unused_imports)]
 use std::io::{self, Write};
+use std::path::PathBuf;
 
 use anyhow::Result;
 
@@ -56,6 +57,7 @@ pub(crate) fn is_builtin(name: &str) -> Option<ShellBuiltin> {
 pub(crate) struct Shell {
     stdin: io::Stdin,
     stdout: io::Stdout,
+    path: Vec<String>,
 }
 
 impl Shell {
@@ -63,6 +65,17 @@ impl Shell {
         Self {
             stdin: io::stdin(),
             stdout: io::stdout(),
+            path: Self::load_path(),
+        }
+    }
+
+    fn load_path() -> Vec<String> {
+        match std::env::var("PATH") {
+            Ok(path) => path
+                .split(':')
+                .map(|e| e.to_string())
+                .collect::<Vec<String>>(),
+            Err(_) => Vec::default(),
         }
     }
 
@@ -83,12 +96,23 @@ impl Shell {
         if let Some(builtin) = is_builtin(&command.name) {
             self.exec_builtin(builtin, &command)?;
         } else {
-            writeln!(self.stdout, "{}: command not found", command.name)?;
+            self.exec_path(&command)?;
         }
 
         self.stdout.flush()?;
 
         Ok(())
+    }
+
+    fn in_path(&self, name: &str) -> Option<PathBuf> {
+        for entry in self.path.iter() {
+            let entry = PathBuf::from(entry).join(name);
+            if entry.exists() {
+                return Some(entry);
+            }
+        }
+
+        None
     }
 
     fn exec_builtin(&mut self, builtin: ShellBuiltin, command: &Command) -> Result<()> {
@@ -106,11 +130,22 @@ impl Shell {
                 if is_builtin(type_arg).is_some() {
                     writeln!(self.stdout, "{type_arg} is a shell builtin")?;
                 } else {
-                    writeln!(self.stdout, "{type_arg} not found")?;
+                    match self.in_path(type_arg) {
+                        Some(entry) => writeln!(self.stdout, "{type_arg} is {}", entry.display())?,
+                        None => writeln!(self.stdout, "{type_arg}: not found")?,
+                    }
                 }
             }
         }
 
+        Ok(())
+    }
+
+    fn exec_path(&mut self, command: &Command) -> Result<()> {
+        match self.in_path(&command.name) {
+            Some(_entry) => {}
+            None => writeln!(self.stdout, "{}: command not found", command.name)?,
+        }
         Ok(())
     }
 }
