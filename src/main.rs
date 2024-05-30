@@ -143,7 +143,12 @@ impl Shell {
 
     fn exec_path(&mut self, command: &Command) -> Result<()> {
         match self.in_path(&command.name) {
-            Some(_entry) => {} // TODO: Start here for executing programs
+            Some(entry) => {
+                let proc = std::process::Command::new(entry)
+                    .args(&command.args)
+                    .output()?;
+                self.stdout.write(&proc.stdout)?;
+            } // TODO: Start here for executing programs
             None => writeln!(self.stdout, "{}: command not found", command.name)?,
         }
         Ok(())
