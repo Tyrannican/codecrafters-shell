@@ -2,7 +2,7 @@
 use std::io::{self, Write};
 use std::path::PathBuf;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum ShellBuiltin {
@@ -11,9 +11,40 @@ pub(crate) enum ShellBuiltin {
     Type,
 }
 
+impl ShellBuiltin {
+    pub(crate) fn exec(self, args: Vec<String>) -> Result<Vec<u8>> {
+        match self {
+            Self::Echo => Ok(args.join(" ").into_bytes()),
+            Self::Exit => {
+                let exit_code = if args.is_empty() {
+                    0
+                } else {
+                    args[0].parse::<i32>()?
+                };
+                std::process::exit(exit_code);
+            }
+            Self::Type => {
+                let path = load_path();
+                let type_arg = &args[0];
+                if is_builtin(type_arg).is_some() {
+                    return Ok(format!("{type_arg} is a shell builtin").into_bytes());
+                } else {
+                    match parse_path(path, type_arg) {
+                        Some(entry) => {
+                            Ok(format!("{type_arg} is {}", entry.display()).into_bytes())
+                        }
+                        None => Ok(format!("{type_arg}: not found").into_bytes()),
+                    }
+                }
+            }
+        }
+    }
+}
+
 pub(crate) struct Command {
     name: String,
     args: Vec<String>,
+    builtin: Option<ShellBuiltin>,
 }
 
 impl Command {
@@ -40,7 +71,25 @@ impl Command {
 
         Self {
             name: name.to_string(),
+            builtin: is_builtin(name),
             args,
+        }
+    }
+
+    pub(crate) fn exec(&self) -> Result<Vec<u8>> {
+        if let Some(builtin) = self.builtin {
+            builtin.exec(self.args.to_owned())
+        } else {
+            let path = load_path();
+            match parse_path(path, &self.name) {
+                Some(entry) => {
+                    let proc = std::process::Command::new(entry)
+                        .args(&self.args)
+                        .output()?;
+                    return Ok(proc.stdout);
+                }
+                None => Ok(format!("{}: command not found", self.name).into_bytes()),
+            }
         }
     }
 }
@@ -52,6 +101,27 @@ pub(crate) fn is_builtin(name: &str) -> Option<ShellBuiltin> {
         "type" => Some(ShellBuiltin::Type),
         _ => None,
     }
+}
+
+pub(crate) fn load_path() -> Vec<String> {
+    match std::env::var("PATH") {
+        Ok(path) => path
+            .split(':')
+            .map(|e| e.to_string())
+            .collect::<Vec<String>>(),
+        Err(_) => Vec::default(),
+    }
+}
+
+pub(crate) fn parse_path(path: Vec<String>, name: &str) -> Option<PathBuf> {
+    for entry in path.iter() {
+        let entry = PathBuf::from(entry).join(name);
+        if entry.exists() {
+            return Some(entry);
+        }
+    }
+
+    None
 }
 
 pub(crate) struct Shell {
@@ -88,7 +158,15 @@ impl Shell {
             self.stdin.read_line(&mut input)?;
 
             let command = Command::new(input);
-            self.exec(command)?;
+            let result = command.exec().with_context(|| {
+                format!(
+                    "executing command {} with args {:?}",
+                    command.name, command.args
+                )
+            })?;
+            self.stdout.write(&result)?;
+            self.stdout.write(b"\n")?;
+            self.stdout.flush()?;
         }
     }
 
