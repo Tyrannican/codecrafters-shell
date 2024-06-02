@@ -68,7 +68,14 @@ fn print_working_directory() -> Result<Vec<u8>> {
 }
 
 fn change_directory(args: Vec<String>) -> Result<Vec<u8>> {
-    let target = PathBuf::from(args[0].to_owned());
+    // HOME should usually be set
+    let home = std::env::var("HOME")?;
+    let mut target = args[0].to_owned();
+
+    // Replace any tilde with home directory
+    target = target.replace("~", &home);
+    let target = PathBuf::from(target);
+
     if !target.exists() {
         return Ok(format!("{}: No such file or directory\n", target.display()).into_bytes());
     }
