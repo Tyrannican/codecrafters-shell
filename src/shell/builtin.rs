@@ -6,6 +6,7 @@ pub(crate) fn is_builtin(name: &str) -> Option<Builtin> {
         "echo" => Some(Builtin::Echo),
         "exit" => Some(Builtin::Exit),
         "type" => Some(Builtin::Type),
+        "pwd" => Some(Builtin::Pwd),
         _ => None,
     }
 }
@@ -15,12 +16,17 @@ pub(crate) enum Builtin {
     Echo,
     Exit,
     Type,
+    Pwd,
 }
 
 impl Builtin {
     pub(crate) fn exec(self, args: Vec<String>) -> Result<Vec<u8>> {
         match self {
-            Self::Echo => Ok(args.join(" ").into_bytes()),
+            Self::Echo => {
+                let mut response = args.join(" ");
+                response.push('\n');
+                return Ok(response.into_bytes());
+            }
             Self::Exit => {
                 let exit_code = if args.is_empty() {
                     0
@@ -33,15 +39,19 @@ impl Builtin {
                 let path = load_path();
                 let type_arg = &args[0];
                 if is_builtin(type_arg).is_some() {
-                    return Ok(format!("{type_arg} is a shell builtin").into_bytes());
+                    return Ok(format!("{type_arg} is a shell builtin\n").into_bytes());
                 } else {
                     match parse_path(path, type_arg) {
                         Some(entry) => {
-                            Ok(format!("{type_arg} is {}", entry.display()).into_bytes())
+                            Ok(format!("{type_arg} is {}\n", entry.display()).into_bytes())
                         }
-                        None => Ok(format!("{type_arg}: not found").into_bytes()),
+                        None => Ok(format!("{type_arg}: not found\n").into_bytes()),
                     }
                 }
+            }
+            Self::Pwd => {
+                let cwd = std::env::current_dir()?;
+                Ok(format!("{}\n", cwd.display()).into_bytes())
             }
         }
     }

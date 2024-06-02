@@ -60,7 +60,7 @@ impl Shell {
                 )
             })?;
             self.stdout.write(&result)?;
-            self.stdout.write(b"\n")?;
+            // self.stdout.write(b"\n")?;
             self.stdout.flush()?;
         }
     }

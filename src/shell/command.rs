@@ -51,7 +51,7 @@ impl Command {
                         .output()?;
                     return Ok(proc.stdout);
                 }
-                None => Ok(format!("{}: command not found", self.name).into_bytes()),
+                None => Ok(format!("{}: command not found\n", self.name).into_bytes()),
             }
         }
     }
