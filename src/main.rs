@@ -1,6 +1,9 @@
 mod shell;
 use shell::Repl;
 
-fn main() -> std::io::Result<()> {
-    Repl::run()
+use anyhow::Result;
+
+fn main() -> Result<()> {
+    let mut repl = Repl::new();
+    repl.run()
 }

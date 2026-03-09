@@ -1,27 +1,46 @@
 use std::io::{self, Write};
+mod builtin;
+mod command;
+
+use command::ShellCommand;
+
+use anyhow::{Context, Result};
 
 #[derive(Debug)]
-pub struct Repl;
+pub struct Repl {
+    stdin: io::Stdin,
+    stdout: io::Stdout,
+}
 
 impl Repl {
-    pub fn run() -> io::Result<()> {
-        loop {
-            let command = Self::input()?;
-            Self::evaluate(command)?;
+    pub fn new() -> Self {
+        Self {
+            stdin: io::stdin(),
+            stdout: io::stdout(),
         }
     }
 
-    fn input() -> io::Result<String> {
-        let mut input = String::new();
-
-        print!("$ ");
-        io::stdout().flush()?;
-        io::stdin().read_line(&mut input)?;
-        Ok(input.trim().to_string())
+    pub fn run(&mut self) -> Result<()> {
+        loop {
+            let command = self.input().context("reading user input")?;
+            let result = command.execute().with_context(|| {
+                format!(
+                    "executing command `{}` with arguments: `{:?}`",
+                    command.name, command.args
+                )
+            })?;
+            self.stdout
+                .write(result.as_bytes())
+                .context("writing to stdout")?;
+        }
     }
 
-    fn evaluate(input: String) -> io::Result<()> {
-        println!("{input}: command not found");
-        Ok(())
+    fn input(&mut self) -> Result<ShellCommand> {
+        let mut input = String::new();
+
+        self.stdout.write(b"$ ").context("writing prompt")?;
+        self.stdout.flush().context("flushing stdout")?;
+        self.stdin.read_line(&mut input).context("reading stdin")?;
+        Ok(ShellCommand::new(input.trim().to_string()))
     }
 }

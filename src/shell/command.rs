@@ -1,0 +1,37 @@
+use crate::shell::builtin::ShellBuiltin;
+use anyhow::{Context, Result};
+
+#[derive(Debug)]
+pub struct ShellCommand {
+    pub name: String,
+    pub args: Vec<String>,
+}
+
+impl ShellCommand {
+    pub fn new(input: String) -> Self {
+        let (name, args) = match input.split_once(' ') {
+            Some((name, rest)) => {
+                let args: Vec<String> = rest.split_ascii_whitespace().map(str::to_string).collect();
+                (name.to_lowercase(), args)
+            }
+            None => (input.to_lowercase(), Vec::new()),
+        };
+
+        Self { name, args }
+    }
+
+    pub fn execute(&self) -> Result<String> {
+        if let Some(builtin) = ShellBuiltin::is_builtin(&self.name) {
+            let result = builtin.execute(&self.args).with_context(|| {
+                format!(
+                    "executing shell builtin `{:?}` with arguments: `{:?}`",
+                    builtin, self.args
+                )
+            })?;
+
+            Ok(result)
+        } else {
+            Ok(format!("{}: command not found\n", self.name))
+        }
+    }
+}
