@@ -23,19 +23,17 @@ impl ShellBuiltin {
 
     pub fn execute(&self, args: &[String]) -> Result<String> {
         match self {
-            Self::Exit => self.exit(),
+            Self::Exit => std::process::exit(0),
             Self::Echo => {
                 let mut combined_args = args.join(" ");
                 combined_args.push('\n');
                 return Ok(combined_args);
             }
+            Self::Type => match Self::is_builtin(&args[0]) {
+                Some(_) => Ok(format!("{} is a shell builtin\n", &args[0])),
+                None => Ok(format!("{}: not found\n", &args[0])),
+            },
             _ => todo!(),
         }
-
-        todo!()
-    }
-
-    fn exit(&self) {
-        std::process::exit(0)
     }
 }
