@@ -1,11 +1,6 @@
-use std::io::{self, Write};
+mod shell;
+use shell::Repl;
 
-fn main() -> io::Result<()> {
-    let mut input = String::new();
-    print!("$ ");
-    io::stdout().flush()?;
-    io::stdin().read_line(&mut input)?;
-
-    print!("{}: command not found", input.trim());
-    Ok(())
+fn main() -> std::io::Result<()> {
+    Repl::run()
 }
