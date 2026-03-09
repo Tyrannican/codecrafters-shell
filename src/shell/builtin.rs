@@ -24,6 +24,11 @@ impl ShellBuiltin {
     pub fn execute(&self, args: &[String]) -> Result<String> {
         match self {
             Self::Exit => self.exit(),
+            Self::Echo => {
+                let mut combined_args = args.join(" ");
+                combined_args.push('\n');
+                return Ok(combined_args);
+            }
             _ => todo!(),
         }
 
