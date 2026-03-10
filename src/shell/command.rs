@@ -29,7 +29,7 @@ impl ShellCommand {
                 )
             })?;
 
-            Ok(result.into_bytes())
+            Ok(result)
         } else {
             match path.find(&self.name) {
                 Some(path) => {

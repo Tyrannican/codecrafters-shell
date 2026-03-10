@@ -1,5 +1,5 @@
 use crate::shell::ShellPath;
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum ShellBuiltin {
@@ -22,21 +22,29 @@ impl ShellBuiltin {
         }
     }
 
-    pub fn execute(&self, args: &[String], path: &ShellPath) -> Result<String> {
+    pub fn execute(&self, args: &[String], path: &ShellPath) -> Result<Vec<u8>> {
         match self {
             Self::Exit => std::process::exit(0),
             Self::Echo => {
                 let mut combined_args = args.join(" ");
                 combined_args.push('\n');
-                return Ok(combined_args);
+                return Ok(combined_args.into_bytes());
             }
             Self::Type => match Self::is_builtin(&args[0]) {
-                Some(_) => Ok(format!("{} is a shell builtin\n", &args[0])),
+                Some(_) => Ok(format!("{} is a shell builtin\n", &args[0]).into_bytes()),
                 None => match path.find(&args[0]) {
-                    Some(p) => Ok(format!("{} is {}\n", &args[0], p.display())),
-                    None => Ok(format!("{}: not found\n", &args[0])),
+                    Some(p) => Ok(format!("{} is {}\n", &args[0], p.display()).into_bytes()),
+                    None => Ok(format!("{}: not found\n", &args[0]).into_bytes()),
                 },
             },
+            Self::Pwd => {
+                let mut cwd = std::env::current_dir()
+                    .context("getting current working dir")?
+                    .display()
+                    .to_string();
+                cwd.push('\n');
+                Ok(cwd.into_bytes())
+            }
             _ => todo!(),
         }
     }
