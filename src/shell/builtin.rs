@@ -1,5 +1,6 @@
 use crate::shell::ShellPath;
 use anyhow::{Context, Result};
+use std::path::PathBuf;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum ShellBuiltin {
@@ -44,6 +45,21 @@ impl ShellBuiltin {
                     .to_string();
                 cwd.push('\n');
                 Ok(cwd.into_bytes())
+            }
+            Self::Cd => {
+                let dst = if args[0].starts_with("~") {
+                    PathBuf::from(format!("{}/{}", path.home.display(), &args[0]))
+                } else {
+                    PathBuf::from(&args[0])
+                };
+
+                if let Err(_) = std::env::set_current_dir(&dst) {
+                    return Ok(
+                        format!("{}: No such file or directory\n", dst.display()).into_bytes()
+                    );
+                };
+
+                Ok(b"".to_vec())
             }
             _ => todo!(),
         }

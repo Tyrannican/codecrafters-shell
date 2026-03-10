@@ -52,12 +52,14 @@ impl Repl {
 #[derive(Debug)]
 pub struct ShellPath {
     path: Vec<PathBuf>,
+    home: PathBuf,
 }
 
 impl ShellPath {
     pub fn new() -> Result<Self> {
-        let path = parse_path()?;
-        Ok(Self { path })
+        let path = parse_path().context("parsing PATH var")?;
+        let home = PathBuf::from(std::env::var("HOME").context("reading HOME dir")?);
+        Ok(Self { path, home })
     }
 
     pub fn find(&self, cmd: impl AsRef<str>) -> Option<&PathBuf> {
