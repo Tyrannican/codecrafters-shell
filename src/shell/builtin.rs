@@ -48,7 +48,11 @@ impl ShellBuiltin {
             }
             Self::Cd => {
                 let dst = if args[0].starts_with("~") {
-                    PathBuf::from(format!("{}/{}", path.home.display(), &args[0]))
+                    PathBuf::from(format!(
+                        "{}/{}",
+                        path.home.display(),
+                        &args[0].replace("~", "")
+                    ))
                 } else {
                     PathBuf::from(&args[0])
                 };
@@ -61,7 +65,6 @@ impl ShellBuiltin {
 
                 Ok(b"".to_vec())
             }
-            _ => todo!(),
         }
     }
 }
