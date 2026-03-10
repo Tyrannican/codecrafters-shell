@@ -35,9 +35,7 @@ impl Repl {
                     command.name, command.args
                 )
             })?;
-            self.stdout
-                .write(result.as_bytes())
-                .context("writing to stdout")?;
+            self.stdout.write(&result).context("writing to stdout")?;
         }
     }
 

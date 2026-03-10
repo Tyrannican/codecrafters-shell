@@ -20,7 +20,7 @@ impl ShellCommand {
         Self { name, args }
     }
 
-    pub fn execute(&self, path: &ShellPath) -> Result<String> {
+    pub fn execute(&self, path: &ShellPath) -> Result<Vec<u8>> {
         if let Some(builtin) = ShellBuiltin::is_builtin(&self.name) {
             let result = builtin.execute(&self.args, path).with_context(|| {
                 format!(
@@ -29,9 +29,26 @@ impl ShellCommand {
                 )
             })?;
 
-            Ok(result)
+            Ok(result.into_bytes())
         } else {
-            Ok(format!("{}: command not found\n", self.name))
+            match path.find(&self.name) {
+                Some(path) => {
+                    let output = std::process::Command::new(&self.name)
+                        .args(&self.args)
+                        .output()
+                        .with_context(|| {
+                            format!(
+                                "executing command {} with args {:?}",
+                                path.display(),
+                                self.args
+                            )
+                        })?
+                        .stdout;
+
+                    Ok(output)
+                }
+                None => Ok(format!("{}: command not found\n", self.name).into_bytes()),
+            }
         }
     }
 }
