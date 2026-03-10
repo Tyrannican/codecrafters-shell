@@ -1,4 +1,4 @@
-use crate::shell::builtin::ShellBuiltin;
+use crate::shell::{ShellPath, builtin::ShellBuiltin};
 use anyhow::{Context, Result};
 
 #[derive(Debug)]
@@ -20,9 +20,9 @@ impl ShellCommand {
         Self { name, args }
     }
 
-    pub fn execute(&self) -> Result<String> {
+    pub fn execute(&self, path: &ShellPath) -> Result<String> {
         if let Some(builtin) = ShellBuiltin::is_builtin(&self.name) {
-            let result = builtin.execute(&self.args).with_context(|| {
+            let result = builtin.execute(&self.args, path).with_context(|| {
                 format!(
                     "executing shell builtin `{:?}` with arguments: `{:?}`",
                     builtin, self.args

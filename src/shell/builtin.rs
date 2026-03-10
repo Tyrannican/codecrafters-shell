@@ -1,3 +1,4 @@
+use crate::shell::ShellPath;
 use anyhow::Result;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -21,7 +22,7 @@ impl ShellBuiltin {
         }
     }
 
-    pub fn execute(&self, args: &[String]) -> Result<String> {
+    pub fn execute(&self, args: &[String], path: &ShellPath) -> Result<String> {
         match self {
             Self::Exit => std::process::exit(0),
             Self::Echo => {
@@ -31,7 +32,10 @@ impl ShellBuiltin {
             }
             Self::Type => match Self::is_builtin(&args[0]) {
                 Some(_) => Ok(format!("{} is a shell builtin\n", &args[0])),
-                None => Ok(format!("{}: not found\n", &args[0])),
+                None => match path.find(&args[0]) {
+                    Some(p) => Ok(format!("{} is {}\n", &args[0], p.display())),
+                    None => Ok(format!("{}: not found\n", &args[0])),
+                },
             },
             _ => todo!(),
         }
