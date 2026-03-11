@@ -1,13 +1,11 @@
-use std::{
-    io::{self, Write},
-    os::unix::fs::PermissionsExt,
-    path::PathBuf,
-};
+use std::io::{self, Write};
 mod builtin;
 mod command;
 mod parser;
+mod utils;
 
 use command::ShellCommand;
+pub use utils::{CommandOutput, ShellPath};
 
 use anyhow::{Context, Result};
 
@@ -15,6 +13,7 @@ use anyhow::{Context, Result};
 pub struct Repl {
     stdin: io::Stdin,
     stdout: io::Stdout,
+    stderr: io::Stderr,
 }
 
 impl Repl {
@@ -22,6 +21,7 @@ impl Repl {
         Self {
             stdin: io::stdin(),
             stdout: io::stdout(),
+            stderr: io::stderr(),
         }
     }
 
@@ -36,7 +36,20 @@ impl Repl {
                         command.name, command.args
                     )
                 })?;
-                self.stdout.write(&result).context("writing to stdout")?;
+
+                match result {
+                    CommandOutput::Stdout(out) => {
+                        self.stdout.write(&out).context("writing to stdout")?;
+                    }
+                    CommandOutput::Stderr(err) => {
+                        self.stderr.write(&err).context("writing to stderr")?;
+                    }
+                    CommandOutput::Empty => {
+                        self.stdout
+                            .write(b"\n")
+                            .context("writing empty response to stdout")?;
+                    }
+                }
             }
         }
     }
@@ -58,71 +71,4 @@ impl Repl {
             Ok(Some(ShellCommand::new(input)))
         }
     }
-}
-
-#[derive(Debug)]
-pub struct ShellPath {
-    path: Vec<PathBuf>,
-    home: PathBuf,
-}
-
-impl ShellPath {
-    pub fn new() -> Result<Self> {
-        let path = parse_path().context("parsing PATH var")?;
-        let home = PathBuf::from(std::env::var("HOME").context("reading HOME dir")?);
-        Ok(Self { path, home })
-    }
-
-    pub fn find(&self, cmd: impl AsRef<str>) -> Option<&PathBuf> {
-        for path in self.path.iter() {
-            let file = path.file_name().expect("should be fine");
-            if file == cmd.as_ref() {
-                return Some(path);
-            }
-        }
-
-        None
-    }
-}
-
-fn is_executable(path: &PathBuf) -> bool {
-    path.metadata()
-        .map(|m| m.permissions().mode() & 0o111 != 0)
-        .unwrap_or(false)
-}
-
-fn parse_path() -> Result<Vec<PathBuf>> {
-    let path = std::env::var("PATH")
-        .context("loading PATH var")?
-        .split(':')
-        .filter_map(|entry| {
-            let entry = PathBuf::from(entry);
-            if entry.is_dir() {
-                return Some(
-                    std::fs::read_dir(entry)
-                        .into_iter()
-                        .flatten()
-                        .filter_map(|e| e.ok())
-                        .filter_map(|entry| {
-                            let path = entry.path();
-                            if path.is_file() && is_executable(&path) {
-                                return Some(path);
-                            } else {
-                                return None;
-                            }
-                        })
-                        .collect(),
-                );
-            } else {
-                if is_executable(&entry) {
-                    return Some(vec![entry]);
-                }
-            }
-
-            None
-        })
-        .flatten()
-        .collect::<Vec<PathBuf>>();
-
-    Ok(path)
 }

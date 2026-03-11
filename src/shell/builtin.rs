@@ -1,4 +1,4 @@
-use crate::shell::ShellPath;
+use crate::shell::{ShellPath, utils::CommandOutput};
 use anyhow::{Context, Result};
 use std::path::PathBuf;
 
@@ -23,19 +23,25 @@ impl ShellBuiltin {
         }
     }
 
-    pub fn execute(&self, args: &[String], path: &ShellPath) -> Result<Vec<u8>> {
+    pub fn execute(&self, args: &[String], path: &ShellPath) -> Result<CommandOutput> {
         match self {
             Self::Exit => std::process::exit(0),
             Self::Echo => {
                 let mut combined_args = args.join(" ");
                 combined_args.push('\n');
-                return Ok(combined_args.into_bytes());
+                return Ok(CommandOutput::Stdout(combined_args.into_bytes()));
             }
             Self::Type => match Self::is_builtin(&args[0]) {
-                Some(_) => Ok(format!("{} is a shell builtin\n", &args[0]).into_bytes()),
+                Some(_) => Ok(CommandOutput::Stdout(
+                    format!("{} is a shell builtin\n", &args[0]).into_bytes(),
+                )),
                 None => match path.find(&args[0]) {
-                    Some(p) => Ok(format!("{} is {}\n", &args[0], p.display()).into_bytes()),
-                    None => Ok(format!("{}: not found\n", &args[0]).into_bytes()),
+                    Some(p) => Ok(CommandOutput::Stdout(
+                        format!("{} is {}\n", &args[0], p.display()).into_bytes(),
+                    )),
+                    None => Ok(CommandOutput::Stderr(
+                        format!("{}: not found\n", &args[0]).into_bytes(),
+                    )),
                 },
             },
             Self::Pwd => {
@@ -44,7 +50,7 @@ impl ShellBuiltin {
                     .display()
                     .to_string();
                 cwd.push('\n');
-                Ok(cwd.into_bytes())
+                Ok(CommandOutput::Stdout(cwd.into_bytes()))
             }
             Self::Cd => {
                 let dst = if args[0].starts_with("~") {
@@ -58,12 +64,12 @@ impl ShellBuiltin {
                 };
 
                 if let Err(_) = std::env::set_current_dir(&dst) {
-                    return Ok(
-                        format!("{}: No such file or directory\n", dst.display()).into_bytes()
-                    );
+                    return Ok(CommandOutput::Stderr(
+                        format!("{}: No such file or directory\n", dst.display()).into_bytes(),
+                    ));
                 };
 
-                Ok(b"".to_vec())
+                Ok(CommandOutput::Empty)
             }
         }
     }

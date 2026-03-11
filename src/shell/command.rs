@@ -1,5 +1,16 @@
-use crate::shell::{ShellPath, builtin::ShellBuiltin};
+use crate::shell::{ShellPath, builtin::ShellBuiltin, utils::CommandOutput};
 use anyhow::{Context, Result};
+use std::path::PathBuf;
+
+type StdPair = (CommandOutput, CommandOutput);
+
+#[derive(Debug, Copy, Clone, PartialEq)]
+enum RedirectOp {
+    RedirectOut,
+    AppendOut,
+    RedirectErr,
+    AppendErr,
+}
 
 #[derive(Debug)]
 pub struct ShellCommand {
@@ -13,7 +24,29 @@ impl ShellCommand {
         Self { name, args: input }
     }
 
-    pub fn execute(&self, path: &ShellPath) -> Result<Vec<u8>> {
+    pub fn execute(&self, path: &ShellPath) -> Result<CommandOutput> {
+        if self.name.is_empty() {
+            return Ok(CommandOutput::Empty);
+        }
+
+        let outputs = self.run_command(path).with_context(|| {
+            format!(
+                "running command '{}' with arguments {:?}",
+                self.name, self.args
+            )
+        })?;
+        let (stdout, stderr) = outputs;
+        if let CommandOutput::Stdout(data) = stdout {
+            eprintln!("STDOUT: {}", std::str::from_utf8(&data)?);
+        }
+        if let CommandOutput::Stderr(data) = stderr {
+            eprintln!("STDERR: {}", std::str::from_utf8(&data)?);
+        }
+
+        Ok(CommandOutput::Empty)
+    }
+
+    fn run_command(&self, path: &ShellPath) -> Result<StdPair> {
         if let Some(builtin) = ShellBuiltin::is_builtin(&self.name) {
             let result = builtin.execute(&self.args, path).with_context(|| {
                 format!(
@@ -22,7 +55,11 @@ impl ShellCommand {
                 )
             })?;
 
-            Ok(result)
+            match result {
+                CommandOutput::Stdout(_) => Ok((result, CommandOutput::Empty)),
+                CommandOutput::Stderr(_) => Ok((CommandOutput::Empty, result)),
+                CommandOutput::Empty => Ok((CommandOutput::Empty, CommandOutput::Empty)),
+            }
         } else {
             match path.find(&self.name) {
                 Some(path) => {
@@ -35,12 +72,19 @@ impl ShellCommand {
                                 path.display(),
                                 self.args
                             )
-                        })?
-                        .stdout;
+                        })?;
 
-                    Ok(output)
+                    Ok((
+                        CommandOutput::Stdout(output.stdout),
+                        CommandOutput::Stderr(output.stderr),
+                    ))
                 }
-                None => Ok(format!("{}: command not found\n", self.name).into_bytes()),
+                None => Ok((
+                    CommandOutput::Empty,
+                    CommandOutput::Stderr(
+                        format!("{}: command not found\n", self.name).into_bytes(),
+                    ),
+                )),
             }
         }
     }
