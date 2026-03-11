@@ -5,6 +5,7 @@ use std::{
 };
 mod builtin;
 mod command;
+mod parser;
 
 use command::ShellCommand;
 
@@ -28,24 +29,34 @@ impl Repl {
         let sh_path = ShellPath::new()?;
 
         loop {
-            let command = self.input().context("reading user input")?;
-            let result = command.execute(&sh_path).with_context(|| {
-                format!(
-                    "executing command `{}` with arguments: `{:?}`",
-                    command.name, command.args
-                )
-            })?;
-            self.stdout.write(&result).context("writing to stdout")?;
+            if let Some(command) = self.input().context("reading user input")? {
+                let result = command.execute(&sh_path).with_context(|| {
+                    format!(
+                        "executing command `{}` with arguments: `{:?}`",
+                        command.name, command.args
+                    )
+                })?;
+                self.stdout.write(&result).context("writing to stdout")?;
+            }
         }
     }
 
-    fn input(&mut self) -> Result<ShellCommand> {
+    fn input(&mut self) -> Result<Option<ShellCommand>> {
         let mut input = String::new();
 
         self.stdout.write(b"$ ").context("writing prompt")?;
         self.stdout.flush().context("flushing stdout")?;
         self.stdin.read_line(&mut input).context("reading stdin")?;
-        Ok(ShellCommand::new(input.trim().to_string()))
+
+        let (_, input) = parser::parse(input.as_bytes())
+            .map_err(|e| anyhow::anyhow!("parse error: {e}"))
+            .context("parsing input")?;
+
+        if input.is_empty() {
+            return Ok(None);
+        } else {
+            Ok(Some(ShellCommand::new(input)))
+        }
     }
 }
 
