@@ -8,16 +8,9 @@ pub struct ShellCommand {
 }
 
 impl ShellCommand {
-    pub fn new(input: String) -> Self {
-        let (name, args) = match input.split_once(' ') {
-            Some((name, rest)) => {
-                let args: Vec<String> = rest.split_ascii_whitespace().map(str::to_string).collect();
-                (name.to_lowercase(), args)
-            }
-            None => (input.to_lowercase(), Vec::new()),
-        };
-
-        Self { name, args }
+    pub fn new(mut input: Vec<String>) -> Self {
+        let name = input.remove(0);
+        Self { name, args: input }
     }
 
     pub fn execute(&self, path: &ShellPath) -> Result<Vec<u8>> {
