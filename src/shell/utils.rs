@@ -94,6 +94,15 @@ pub struct ShellPathCompleter {
     pub filenames: FilenameCompleter,
 }
 
+impl ShellPathCompleter {
+    pub fn new(shellpath: ShellPath) -> Self {
+        Self {
+            shellpath,
+            filenames: FilenameCompleter::new(),
+        }
+    }
+}
+
 impl Completer for ShellPathCompleter {
     type Candidate = Pair;
 
@@ -114,12 +123,19 @@ impl Completer for ShellPathCompleter {
                 .iter()
                 .filter_map(|p| {
                     let name = p.file_name()?.to_str()?;
-                    name.starts_with(prefix).then(|| Pair {
-                        display: format!("{} ", name.to_string()),
-                        replacement: format!("{} ", name.to_string()),
-                    })
+                    name.starts_with(prefix)
+                        .then(|| format!("{} ", name.to_string()))
                 })
-                .collect();
+                .collect::<std::collections::BTreeSet<String>>();
+
+            let cmd_matches = cmd_matches
+                .into_iter()
+                .map(|m| Pair {
+                    display: m.clone(),
+                    replacement: m,
+                })
+                .collect::<Vec<Pair>>();
+
             Ok((start, cmd_matches))
         } else {
             self.filenames.complete(line, pos, ctx)

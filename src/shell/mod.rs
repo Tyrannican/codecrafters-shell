@@ -5,7 +5,7 @@ mod parser;
 mod utils;
 
 use command::ShellCommand;
-use rustyline::{Editor, error::ReadlineError, history::FileHistory};
+use rustyline::{Editor, config::Configurer, error::ReadlineError, history::FileHistory};
 pub use utils::{CommandOutput, ShellPath, ShellPathCompleter};
 
 use anyhow::{Context, Result};
@@ -30,11 +30,10 @@ impl Repl {
 
     pub fn run(&mut self) -> Result<()> {
         let sh_path = ShellPath::new()?;
-        let completer = Some(ShellPathCompleter {
-            shellpath: sh_path.clone(),
-            filenames: rustyline::completion::FilenameCompleter::new(),
-        });
+        let completer = Some(ShellPathCompleter::new(sh_path.clone()));
         self.stdin.set_helper(completer);
+        self.stdin
+            .set_completion_type(rustyline::CompletionType::List);
 
         loop {
             if let Some(command) = self.input().context("reading user input")? {
