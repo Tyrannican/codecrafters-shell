@@ -138,7 +138,20 @@ impl Completer for ShellPathCompleter {
 
             Ok((start, cmd_matches))
         } else {
-            self.filenames.complete(line, pos, ctx)
+            let (start, candidates) = self.filenames.complete(line, pos, ctx)?;
+
+            let thing = candidates
+                .into_iter()
+                .map(|mut p| {
+                    if !p.replacement.ends_with('/') {
+                        p.replacement.push(' ');
+                    }
+
+                    p
+                })
+                .collect();
+
+            Ok((start, thing))
         }
     }
 }
