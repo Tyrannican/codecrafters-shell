@@ -142,12 +142,16 @@ impl Completer for ShellPathCompleter {
 
             let thing = candidates
                 .into_iter()
-                .map(|mut p| {
-                    if !p.replacement.ends_with('/') {
-                        p.replacement.push(' ');
+                .map(|mut path| {
+                    if !path.replacement.ends_with('/') {
+                        path.replacement.push(' ');
+                    } else {
+                        if !path.display.ends_with('/') {
+                            path.display.push('/');
+                        }
                     }
 
-                    p
+                    path
                 })
                 .collect();
 
