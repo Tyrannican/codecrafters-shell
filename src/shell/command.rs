@@ -1,6 +1,6 @@
 use crate::shell::{ShellPath, builtin::ShellBuiltin, utils::CommandOutput};
 use anyhow::{Context, Result};
-use std::path::PathBuf;
+use std::{io::Write, path::PathBuf};
 
 type StdPair = (CommandOutput, CommandOutput);
 
@@ -54,6 +54,24 @@ impl ShellCommand {
         }
     }
 
+    fn open_redirect_file(&self, op: impl AsRef<str>, path: &PathBuf) -> Result<std::fs::File> {
+        if let Some(parent) = path.parent() {
+            if !parent.exists() {
+                std::fs::create_dir_all(&parent).context("creating redirect dirs")?;
+            }
+        }
+
+        let mut opts = std::fs::OpenOptions::new();
+        opts.create(true).write(true);
+        match op.as_ref() {
+            ">" | "1>" | "2>" => opts.truncate(true),
+            ">>" | "1>>" | "2>>" => opts.append(true),
+            _ => unreachable!("impossible - open redirect"),
+        };
+
+        Ok(opts.open(path)?)
+    }
+
     fn redirect_output(
         &self,
         op: impl AsRef<str>,
@@ -62,46 +80,34 @@ impl ShellCommand {
     ) -> Result<CommandOutput> {
         let (stdout, stderr) = outputs;
         let path = PathBuf::from(file.as_ref());
-        std::fs::File::create(&path).context("redirect - creating file")?;
+
+        let mut file = self.open_redirect_file(op.as_ref(), &path)?;
+
         match op.as_ref() {
             ">" | "1>" => {
                 if let CommandOutput::Stdout(out) = stdout {
-                    std::fs::write(&path, &out)
-                        .with_context(|| format!("redirect out - writing to {}", path.display()))?;
+                    file.write(&out).context("redirecting out - writing file")?;
                 }
 
                 return Ok(stderr);
             }
             ">>" | "1>>" => {
-                if let CommandOutput::Stdout(mut out) = stdout {
-                    let mut content = std::fs::read(&path)
-                        .with_context(|| format!("appending out - reading {}", path.display()))?;
-
-                    content.append(&mut out);
-                    std::fs::write(&path, &content).with_context(|| {
-                        format!("appending out - writing to {}", path.display())
-                    })?;
+                if let CommandOutput::Stdout(out) = stdout {
+                    file.write(&out).context("append out - writing file")?;
                 }
 
                 return Ok(stderr);
             }
             "2>" => {
                 if let CommandOutput::Stderr(err) = stderr {
-                    std::fs::write(&path, &err)
-                        .with_context(|| format!("redirect err - writing to {}", path.display()))?;
+                    file.write(&err).context("redirecting err - writing file")?;
                 }
 
                 return Ok(stdout);
             }
             "2>>" => {
-                if let CommandOutput::Stderr(mut err) = stderr {
-                    let mut content = std::fs::read(&path)
-                        .with_context(|| format!("appending err - reading {}", path.display()))?;
-
-                    content.append(&mut err);
-                    std::fs::write(&path, &content).with_context(|| {
-                        format!("appending err - writing to {}", path.display())
-                    })?;
+                if let CommandOutput::Stderr(err) = stderr {
+                    file.write(&err).context("append err - writing file")?;
                 }
 
                 return Ok(stdout);
