@@ -5,28 +5,36 @@ mod parser;
 mod utils;
 
 use command::ShellCommand;
-pub use utils::{CommandOutput, ShellPath};
+use rustyline::{Editor, error::ReadlineError, history::FileHistory};
+pub use utils::{CommandOutput, ShellPath, ShellPathCompleter};
 
 use anyhow::{Context, Result};
 
 #[derive(Debug)]
 pub struct Repl {
-    stdin: io::Stdin,
     stdout: io::Stdout,
     stderr: io::Stderr,
+    stdin: Editor<ShellPathCompleter, FileHistory>,
 }
 
 impl Repl {
     pub fn new() -> Self {
+        let stdin = Editor::<ShellPathCompleter, FileHistory>::new().expect("error loading reader");
+
         Self {
-            stdin: io::stdin(),
             stdout: io::stdout(),
             stderr: io::stderr(),
+            stdin,
         }
     }
 
     pub fn run(&mut self) -> Result<()> {
         let sh_path = ShellPath::new()?;
+        let completer = Some(ShellPathCompleter {
+            shellpath: sh_path.clone(),
+            filenames: rustyline::completion::FilenameCompleter::new(),
+        });
+        self.stdin.set_helper(completer);
 
         loop {
             if let Some(command) = self.input().context("reading user input")? {
@@ -50,20 +58,29 @@ impl Repl {
     }
 
     fn input(&mut self) -> Result<Option<ShellCommand>> {
-        let mut input = String::new();
+        let line = self.stdin.readline("$ ");
+        match line {
+            Ok(input) => {
+                let (_, input) = parser::parse(input.as_bytes())
+                    .map_err(|e| anyhow::anyhow!("parse error: {e}"))
+                    .context("parsing input")?;
 
-        self.stdout.write(b"$ ").context("writing prompt")?;
-        self.stdout.flush().context("flushing stdout")?;
-        self.stdin.read_line(&mut input).context("reading stdin")?;
-
-        let (_, input) = parser::parse(input.as_bytes())
-            .map_err(|e| anyhow::anyhow!("parse error: {e}"))
-            .context("parsing input")?;
-
-        if input.is_empty() {
-            return Ok(None);
-        } else {
-            Ok(Some(ShellCommand::new(input)))
+                if input.is_empty() {
+                    return Ok(None);
+                } else {
+                    Ok(Some(ShellCommand::new(input)))
+                }
+            }
+            Err(ReadlineError::Interrupted) => {
+                std::process::exit(0);
+                // println!("^C");
+                // return Ok(None);
+            }
+            Err(ReadlineError::Eof) => {
+                println!("^D");
+                return Ok(None);
+            }
+            _ => panic!("error parsing input"),
         }
     }
 }

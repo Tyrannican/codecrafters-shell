@@ -1,6 +1,12 @@
 use anyhow::{Context, Result};
 use std::{os::unix::fs::PermissionsExt, path::PathBuf};
 
+// Docs on this one sucked so had to call in Claude (eugh)...
+use rustyline::{
+    Context as RustyContext, Helper, Highlighter, Hinter, Validator,
+    completion::{Completer, FilenameCompleter, Pair},
+};
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum CommandOutput {
     Stdout(Vec<u8>),
@@ -8,7 +14,7 @@ pub enum CommandOutput {
     Empty,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ShellPath {
     pub path: Vec<PathBuf>,
     pub home: PathBuf,
@@ -40,7 +46,7 @@ fn is_executable(path: &PathBuf) -> bool {
 }
 
 fn parse_path() -> Result<Vec<PathBuf>> {
-    let path = std::env::var("PATH")
+    let mut path = std::env::var("PATH")
         .context("loading PATH var")?
         .split(':')
         .filter_map(|entry| {
@@ -72,5 +78,51 @@ fn parse_path() -> Result<Vec<PathBuf>> {
         .flatten()
         .collect::<Vec<PathBuf>>();
 
+    // Required for built-in completion
+    path.push(PathBuf::from("exit"));
+    path.push(PathBuf::from("echo"));
+    path.push(PathBuf::from("pwd"));
+    path.push(PathBuf::from("type"));
+    path.push(PathBuf::from("cd"));
+
     Ok(path)
+}
+
+#[derive(Helper, Highlighter, Hinter, Validator)]
+pub struct ShellPathCompleter {
+    pub shellpath: ShellPath,
+    pub filenames: FilenameCompleter,
+}
+
+impl Completer for ShellPathCompleter {
+    type Candidate = Pair;
+
+    fn complete(
+        &self,
+        line: &str,
+        pos: usize,
+        ctx: &RustyContext<'_>,
+    ) -> rustyline::Result<(usize, Vec<Self::Candidate>)> {
+        let start = line[..pos].rfind(' ').map_or(0, |i| i + 1);
+        let prefix = &line[start..pos];
+        let is_command_position = start == 0;
+
+        if is_command_position {
+            let cmd_matches = self
+                .shellpath
+                .path
+                .iter()
+                .filter_map(|p| {
+                    let name = p.file_name()?.to_str()?;
+                    name.starts_with(prefix).then(|| Pair {
+                        display: format!("{} ", name.to_string()),
+                        replacement: format!("{} ", name.to_string()),
+                    })
+                })
+                .collect();
+            Ok((start, cmd_matches))
+        } else {
+            self.filenames.complete(line, pos, ctx)
+        }
+    }
 }
