@@ -1,6 +1,6 @@
 use crate::shell::{ShellPath, builtin::ShellBuiltin, utils::CommandOutput};
 use anyhow::{Context, Result};
-use std::{fs::File, io::Write, path::PathBuf};
+use std::path::PathBuf;
 
 type StdPair = (CommandOutput, CommandOutput);
 
@@ -62,6 +62,7 @@ impl ShellCommand {
     ) -> Result<CommandOutput> {
         let (stdout, stderr) = outputs;
         let path = PathBuf::from(file.as_ref());
+        std::fs::File::create(&path).context("redirect - creating file")?;
         match op.as_ref() {
             ">" | "1>" => {
                 if let CommandOutput::Stdout(out) = stdout {
@@ -107,10 +108,6 @@ impl ShellCommand {
             }
             _ => unreachable!("impossible"),
         }
-    }
-
-    fn pipe(&self, args: &[String]) {
-        todo!()
     }
 
     fn split_args(&self) -> (&[String], Option<&[String]>) {
