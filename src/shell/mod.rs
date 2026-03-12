@@ -36,7 +36,6 @@ impl Repl {
                         command.name, command.args
                     )
                 })?;
-
                 match result {
                     CommandOutput::Stdout(out) => {
                         self.stdout.write(&out).context("writing to stdout")?;
