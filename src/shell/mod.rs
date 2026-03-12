@@ -44,11 +44,7 @@ impl Repl {
                     CommandOutput::Stderr(err) => {
                         self.stderr.write(&err).context("writing to stderr")?;
                     }
-                    CommandOutput::Empty => {
-                        self.stdout
-                            .write(b"\n")
-                            .context("writing empty response to stdout")?;
-                    }
+                    CommandOutput::Empty => {}
                 }
             }
         }
