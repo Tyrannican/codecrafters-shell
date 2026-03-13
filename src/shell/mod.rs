@@ -23,7 +23,9 @@ pub struct Repl {
 
 impl Repl {
     pub fn new() -> Result<Self> {
-        let mut stdin = Editor::<ShellPathCompleter, FileHistory>::new()?;
+        let mut stdin = Editor::<ShellPathCompleter, FileHistory>::new()
+            .map_err(|e| anyhow::anyhow!("rustyline editor error: {e}"))
+            .context("creating rustyline editor")?;
         let shellpath = ShellPath::new().context("loading shellpath")?;
         let completer = Some(ShellPathCompleter::new(shellpath.clone()));
         stdin.set_helper(completer);
