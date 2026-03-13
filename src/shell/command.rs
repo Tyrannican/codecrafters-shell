@@ -1,10 +1,9 @@
-use crate::shell::{ShellPath, builtin::ShellBuiltin, utils::CommandOutput};
+use crate::shell::{
+    ShellPath,
+    builtin::ShellBuiltin,
+    utils::{CommandOutput, OutputPair},
+};
 use anyhow::{Context, Result};
-use std::{io::Write, path::PathBuf};
-
-type StdPair = (CommandOutput, CommandOutput);
-
-const REDIRECT_ARGS: [&str; 7] = ["1>", ">", "1>>", ">>", "2>", "2>>", "|"];
 
 #[derive(Debug)]
 pub struct ShellCommand {
@@ -18,124 +17,22 @@ impl ShellCommand {
         Self { name, args: input }
     }
 
-    pub fn execute(&self, path: &ShellPath) -> Result<CommandOutput> {
+    pub fn execute(&self, path: &ShellPath) -> Result<OutputPair> {
         if self.name.is_empty() {
-            return Ok(CommandOutput::Empty);
+            return Ok((CommandOutput::Empty, CommandOutput::Empty));
         }
 
-        let (args, redirects) = self.split_args();
-        let outputs = self.run_command(path, args).with_context(|| {
+        self.run_command(path).with_context(|| {
             format!(
                 "running command '{}' with arguments {:?}",
                 self.name, self.args
             )
-        })?;
-
-        if let Some(redirect) = redirects {
-            return self.redirect(redirect, outputs);
-        }
-
-        let (stdout, stderr) = outputs;
-        if stdout != CommandOutput::Empty {
-            Ok(stdout)
-        } else if stderr != CommandOutput::Empty {
-            Ok(stderr)
-        } else {
-            Ok(CommandOutput::Empty)
-        }
+        })
     }
 
-    fn redirect(&self, args: &[String], outputs: StdPair) -> Result<CommandOutput> {
-        let op = &args[0];
-        match op.as_str() {
-            ">" | "1>" | ">>" | "1>>" | "2>" | "2>>" => self.redirect_output(op, &args[1], outputs),
-            "|" => todo!(),
-            _ => unreachable!("impossible to reach"),
-        }
-    }
-
-    fn open_redirect_file(&self, op: impl AsRef<str>, path: &PathBuf) -> Result<std::fs::File> {
-        if let Some(parent) = path.parent() {
-            if !parent.exists() {
-                std::fs::create_dir_all(&parent).context("creating redirect dirs")?;
-            }
-        }
-
-        let mut opts = std::fs::OpenOptions::new();
-        opts.create(true).write(true);
-        match op.as_ref() {
-            ">" | "1>" | "2>" => opts.truncate(true),
-            ">>" | "1>>" | "2>>" => opts.append(true),
-            _ => unreachable!("impossible - open redirect"),
-        };
-
-        Ok(opts.open(path)?)
-    }
-
-    fn redirect_output(
-        &self,
-        op: impl AsRef<str>,
-        file: impl AsRef<str>,
-        outputs: StdPair,
-    ) -> Result<CommandOutput> {
-        let (stdout, stderr) = outputs;
-        let path = PathBuf::from(file.as_ref());
-
-        let mut file = self.open_redirect_file(op.as_ref(), &path)?;
-
-        match op.as_ref() {
-            ">" | "1>" => {
-                if let CommandOutput::Stdout(out) = stdout {
-                    file.write(&out).context("redirecting out - writing file")?;
-                }
-
-                return Ok(stderr);
-            }
-            ">>" | "1>>" => {
-                if let CommandOutput::Stdout(out) = stdout {
-                    file.write(&out).context("append out - writing file")?;
-                }
-
-                return Ok(stderr);
-            }
-            "2>" => {
-                if let CommandOutput::Stderr(err) = stderr {
-                    file.write(&err).context("redirecting err - writing file")?;
-                }
-
-                return Ok(stdout);
-            }
-            "2>>" => {
-                if let CommandOutput::Stderr(err) = stderr {
-                    file.write(&err).context("append err - writing file")?;
-                }
-
-                return Ok(stdout);
-            }
-            _ => unreachable!("impossible"),
-        }
-    }
-
-    fn split_args(&self) -> (&[String], Option<&[String]>) {
-        if let Some(idx) = self
-            .args
-            .iter()
-            .rposition(|arg| REDIRECT_ARGS.contains(&arg.as_str()))
-        {
-            let (args, redirect) = self.args.split_at(idx);
-            if redirect.len() < 2 {
-                return (args, None);
-            } else {
-                return (args, Some(redirect));
-            }
-        }
-
-        (&self.args, None)
-    }
-
-    fn run_command(&self, path: &ShellPath, args: &[String]) -> Result<StdPair> {
+    fn run_command(&self, path: &ShellPath) -> Result<OutputPair> {
         if let Some(builtin) = ShellBuiltin::is_builtin(&self.name) {
-            let result = builtin.execute(args, path).with_context(|| {
+            let result = builtin.execute(&self.args, path).with_context(|| {
                 format!(
                     "executing shell builtin `{:?}` with arguments: `{:?}`",
                     builtin, self.args
@@ -151,7 +48,7 @@ impl ShellCommand {
             match path.find(&self.name) {
                 Some(path) => {
                     let output = std::process::Command::new(&self.name)
-                        .args(args)
+                        .args(&self.args)
                         .output()
                         .with_context(|| {
                             format!(
@@ -166,6 +63,7 @@ impl ShellCommand {
                     } else {
                         CommandOutput::Stdout(output.stdout)
                     };
+
                     let stderr = if output.stderr.is_empty() {
                         CommandOutput::Empty
                     } else {

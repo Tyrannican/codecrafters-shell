@@ -7,6 +7,30 @@ use rustyline::{
     completion::{Completer, FilenameCompleter, Pair},
 };
 
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum RedirectOp {
+    RedirectOut,
+    AppendOut,
+    RedirectErr,
+    AppendErr,
+    Pipe,
+}
+
+impl RedirectOp {
+    pub fn parse(op: impl AsRef<str>) -> Option<Self> {
+        match op.as_ref() {
+            ">" | "1>" => Some(Self::RedirectOut),
+            ">>" | "1>>" => Some(Self::AppendOut),
+            "2>" => Some(Self::RedirectErr),
+            "2>>" => Some(Self::AppendErr),
+            "|" => Some(Self::Pipe),
+            _ => None,
+        }
+    }
+}
+
+pub type OutputPair = (CommandOutput, CommandOutput);
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum CommandOutput {
     Stdout(Vec<u8>),

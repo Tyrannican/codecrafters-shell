@@ -1,9 +1,9 @@
 mod shell;
 use shell::Repl;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 fn main() -> Result<()> {
-    let mut repl = Repl::new();
+    let mut repl = Repl::new().context("loading repl shell")?;
     repl.run()
 }
