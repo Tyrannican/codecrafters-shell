@@ -52,7 +52,10 @@ impl Repl {
                     match op {
                         Some(RedirectOp::Pipe) => {
                             let pipeline = ShellPipeline::new(&args, redirect_args);
-                            let outputs = pipeline.execute().context("executing pipeline")?;
+                            let outputs = pipeline
+                                .execute(&self.shellpath)
+                                .context("executing pipeline")?;
+
                             self.write(outputs).context("writing to stdout/stderr")?;
                         }
                         Some(op) => {

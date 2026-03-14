@@ -5,6 +5,11 @@ use crate::shell::{
 };
 use anyhow::{Context, Result};
 
+use std::{
+    io::Write,
+    process::{ChildStdout, Command, Stdio},
+};
+
 #[derive(Debug)]
 pub struct ShellCommand {
     pub name: String,
@@ -47,7 +52,7 @@ impl ShellCommand {
         } else {
             match path.find(&self.name) {
                 Some(path) => {
-                    let output = std::process::Command::new(&self.name)
+                    let output = Command::new(&self.name)
                         .args(&self.args)
                         .output()
                         .with_context(|| {
@@ -83,8 +88,6 @@ impl ShellCommand {
     }
 }
 
-// TODO: Chain the output of one command into the next
-// Pipe stdout and stderr into the next
 #[derive(Debug)]
 pub struct ShellPipeline {
     commands: Vec<Vec<String>>,
@@ -108,48 +111,91 @@ impl ShellPipeline {
         Self { commands }
     }
 
-    pub fn execute(&self) -> Result<OutputPair> {
-        let mut prev: Option<std::process::Child> = None;
+    pub fn execute(&self, shellpath: &ShellPath) -> Result<OutputPair> {
+        let mut last_output = Vec::new();
+        let mut last_child: Option<ChildStdout> = None;
+        let mut children = Vec::new();
+
         for (i, args) in self.commands.iter().enumerate() {
-            let is_last = i == &self.commands.len() - 1;
-            let mut cmd = std::process::Command::new(&args[0]);
-            cmd.args(&args[1..]);
+            let is_last = i == self.commands.len() - 1;
+            match ShellBuiltin::is_builtin(&args[0]) {
+                Some(builtin) => {
+                    let result = builtin.execute(&args[1..], shellpath).with_context(|| {
+                        format!(
+                            "executing builtin `{:?}` with args {:?}",
+                            builtin,
+                            &args[1..]
+                        )
+                    })?;
+                    match result {
+                        CommandOutput::Stdout(out) => last_output = out,
+                        CommandOutput::Stderr(_) => return Ok((CommandOutput::Empty, result)),
+                        CommandOutput::Empty => {}
+                    }
+                }
+                None => {
+                    let stdin = match last_child.take() {
+                        Some(out) => Stdio::from(out),
+                        None if !last_output.is_empty() => Stdio::piped(),
+                        None => Stdio::inherit(),
+                    };
 
-            if let Some(p) = prev.take() {
-                cmd.stdin(p.stdout.expect("should have a stdout"));
+                    let mut cmd = Command::new(&args[0])
+                        .args(&args[1..])
+                        .stdin(stdin)
+                        .stdout(if is_last {
+                            Stdio::inherit()
+                        } else {
+                            Stdio::piped()
+                        })
+                        .stderr(if is_last {
+                            Stdio::inherit()
+                        } else {
+                            Stdio::piped()
+                        })
+                        .spawn()?;
+
+                    if !last_output.is_empty() {
+                        let data = std::mem::take(&mut last_output);
+                        let mut stdin = cmd.stdin.take().expect("handle present");
+                        std::thread::spawn(move || {
+                            let _ = stdin.write_all(&data);
+                        });
+                    }
+
+                    if !is_last {
+                        last_child = cmd.stdout.take();
+                    }
+                    children.push(cmd);
+                }
             }
-
-            if !is_last {
-                cmd.stdout(std::process::Stdio::piped());
-                cmd.stderr(std::process::Stdio::piped());
-            }
-
-            prev = Some(cmd.spawn().context("spawning pipeline command")?);
         }
 
-        let output = match prev {
-            Some(p) => {
-                let output = p
-                    .wait_with_output()
-                    .context("waiting for pipeline output")?;
+        if !last_output.is_empty() {
+            return Ok((CommandOutput::Stdout(last_output), CommandOutput::Empty));
+        }
 
-                let stdout = if output.stdout.is_empty() {
-                    CommandOutput::Empty
-                } else {
-                    CommandOutput::Stdout(output.stdout)
-                };
+        let last = children.pop().expect("should always be one");
+        let output = last.wait_with_output()?;
+        for mut child in children {
+            drop(child.stdout.take());
+            drop(child.stderr.take());
+            let _ = child.wait();
+            let _ = child.kill();
+        }
 
-                let stderr = if output.stderr.is_empty() {
-                    CommandOutput::Empty
-                } else {
-                    CommandOutput::Stderr(output.stderr)
-                };
-
-                (stdout, stderr)
-            }
-            None => (CommandOutput::Empty, CommandOutput::Empty),
+        let stdout = if output.stdout.is_empty() {
+            CommandOutput::Empty
+        } else {
+            CommandOutput::Stdout(output.stdout)
         };
 
-        Ok(output)
+        let stderr = if output.stderr.is_empty() {
+            CommandOutput::Empty
+        } else {
+            CommandOutput::Stderr(output.stderr)
+        };
+
+        Ok((stdout, stderr))
     }
 }
