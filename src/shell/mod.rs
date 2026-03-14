@@ -13,6 +13,7 @@ use anyhow::{Context, Result};
 
 #[derive(Debug)]
 pub struct Repl {
+    history: Option<String>,
     stdout: io::Stdout,
     stderr: io::Stderr,
     stdin: Editor<ShellPathCompleter, FileHistory>,
@@ -24,12 +25,21 @@ impl Repl {
         let mut stdin = Editor::<ShellPathCompleter, FileHistory>::new()
             .map_err(|e| anyhow::anyhow!("rustyline editor error: {e}"))
             .context("creating rustyline editor")?;
+
         let shellpath = ShellPath::new().context("loading shellpath")?;
         let completer = Some(ShellPathCompleter::new(shellpath.clone()));
         stdin.set_helper(completer);
         stdin.set_completion_type(rustyline::CompletionType::List);
 
+        let history_file = std::env::var("HISTFILE").ok();
+        if let Some(ref path) = history_file {
+            stdin
+                .load_history(&path)
+                .context("loading history from HISTFILE")?;
+        }
+
         Ok(Self {
+            history: history_file,
             stdout: io::stdout(),
             stderr: io::stderr(),
             stdin,
@@ -38,45 +48,47 @@ impl Repl {
     }
 
     pub fn run(&mut self) -> Result<()> {
-        let sh_path = ShellPath::new()?;
-        let completer = Some(ShellPathCompleter::new(sh_path.clone()));
-        self.stdin.set_helper(completer);
-        self.stdin
-            .set_completion_type(rustyline::CompletionType::List);
-
         loop {
             if let Some((args, redirects)) = self.input().context("reading user input")? {
+                let history = self
+                    .stdin
+                    .history()
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect::<Vec<String>>();
+
                 if let Some(redirects) = redirects {
                     let (op, redirect_args) = (RedirectOp::parse(&redirects[0]), &redirects[1..]);
 
-                    match op {
-                        Some(RedirectOp::Pipe) => {
-                            let pipeline = ShellPipeline::new(&args, redirect_args);
-                            let outputs = pipeline
-                                .execute(&self.shellpath)
-                                .context("executing pipeline")?;
+                    if let Some(RedirectOp::Pipe) = op {
+                        let pipeline = ShellPipeline::new(&args, redirect_args);
+                        let outputs = pipeline
+                            .execute(&self.shellpath, &history)
+                            .context("executing pipeline")?;
 
-                            self.write(outputs).context("writing to stdout/stderr")?;
-                        }
-                        Some(op) => {
-                            let command = ShellCommand::new(args);
-                            let outputs = command.execute(&self.shellpath).with_context(|| {
-                                format!(
-                                    "executing command `{}` with arguments: {:?}",
-                                    command.name, command.args
-                                )
-                            })?;
-                            let outputs = file::redirect_output(op, redirect_args, outputs)?;
-                            self.write(outputs).context("writing to stdout/stderr")?;
-                        }
-                        None => {
-                            let command = ShellCommand::new(args);
-                            self.execute_command(command)
-                                .context("executing command - no redirect found")?;
+                        self.write(outputs).context("writing to stdout/stderr")?;
+                    } else {
+                        let command = ShellCommand::new(args, history);
+                        match op {
+                            Some(op) => {
+                                let outputs =
+                                    command.execute(&self.shellpath).with_context(|| {
+                                        format!(
+                                            "executing command `{}` with arguments: {:?}",
+                                            command.name, command.args
+                                        )
+                                    })?;
+                                let outputs = file::redirect_output(op, redirect_args, outputs)?;
+                                self.write(outputs).context("writing to stdout/stderr")?;
+                            }
+                            None => {
+                                self.execute_command(command)
+                                    .context("executing command - no redirect found")?;
+                            }
                         }
                     }
                 } else {
-                    let command = ShellCommand::new(args);
+                    let command = ShellCommand::new(args, history);
                     self.execute_command(command)
                         .context("executing command - no redirect present")?;
                 }
@@ -111,6 +123,10 @@ impl Repl {
     fn input(&mut self) -> Result<Option<(Vec<String>, Option<Vec<String>>)>> {
         match self.stdin.readline("$ ") {
             Ok(input) => {
+                self.stdin
+                    .add_history_entry(&input)
+                    .with_context(|| format!("adding history entry: {input}"))?;
+
                 let (_, input) = parser::parse(input.as_bytes())
                     .map_err(|e| anyhow::anyhow!("parse error: {e}"))
                     .context("parsing input")?;
@@ -123,6 +139,9 @@ impl Repl {
                 }
             }
             Err(ReadlineError::Interrupted) => {
+                if let Some(path) = &self.history {
+                    self.stdin.save_history(&path).context("saving history")?;
+                }
                 std::process::exit(0);
             }
             Err(ReadlineError::Eof) => {

@@ -9,6 +9,7 @@ pub enum ShellBuiltin {
     Pwd,
     Type,
     Cd,
+    History,
 }
 
 impl ShellBuiltin {
@@ -19,11 +20,17 @@ impl ShellBuiltin {
             "pwd" => Some(Self::Pwd),
             "type" => Some(Self::Type),
             "cd" => Some(Self::Cd),
+            "history" => Some(Self::History),
             _ => None,
         }
     }
 
-    pub fn execute(&self, args: &[String], path: &ShellPath) -> Result<CommandOutput> {
+    pub fn execute(
+        &self,
+        args: &[String],
+        path: &ShellPath,
+        history: &[String],
+    ) -> Result<CommandOutput> {
         match self {
             Self::Exit => std::process::exit(0),
             Self::Echo => {
@@ -70,6 +77,25 @@ impl ShellBuiltin {
                 };
 
                 Ok(CommandOutput::Empty)
+            }
+            Self::History => {
+                let mut entries = Vec::new();
+                for (idx, entry) in history.iter().enumerate() {
+                    entries.push(format!("{} {entry}", idx + 1));
+                }
+
+                if args.is_empty() {
+                    let output = entries.join("\n");
+                    Ok(CommandOutput::Stdout(output.into_bytes()))
+                } else {
+                    if let Ok(numbers) = &args[0].parse::<usize>() {
+                        let idx_from = (history.len() - 1) - numbers;
+                        let output = &entries[idx_from..].join("\n");
+                        Ok(CommandOutput::Stdout(output.clone().into_bytes()))
+                    } else {
+                        Ok(CommandOutput::Empty)
+                    }
+                }
             }
         }
     }

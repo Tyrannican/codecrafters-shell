@@ -14,12 +14,17 @@ use std::{
 pub struct ShellCommand {
     pub name: String,
     pub args: Vec<String>,
+    history: Vec<String>,
 }
 
 impl ShellCommand {
-    pub fn new(mut input: Vec<String>) -> Self {
+    pub fn new(mut input: Vec<String>, history: Vec<String>) -> Self {
         let name = input.remove(0);
-        Self { name, args: input }
+        Self {
+            name,
+            args: input,
+            history,
+        }
     }
 
     pub fn execute(&self, path: &ShellPath) -> Result<OutputPair> {
@@ -37,12 +42,14 @@ impl ShellCommand {
 
     fn run_command(&self, path: &ShellPath) -> Result<OutputPair> {
         if let Some(builtin) = ShellBuiltin::is_builtin(&self.name) {
-            let result = builtin.execute(&self.args, path).with_context(|| {
-                format!(
-                    "executing shell builtin `{:?}` with arguments: `{:?}`",
-                    builtin, self.args
-                )
-            })?;
+            let result = builtin
+                .execute(&self.args, path, &self.history)
+                .with_context(|| {
+                    format!(
+                        "executing shell builtin `{:?}` with arguments: `{:?}`",
+                        builtin, self.args
+                    )
+                })?;
 
             match result {
                 CommandOutput::Stdout(_) => Ok((result, CommandOutput::Empty)),
@@ -111,7 +118,7 @@ impl ShellPipeline {
         Self { commands }
     }
 
-    pub fn execute(&self, shellpath: &ShellPath) -> Result<OutputPair> {
+    pub fn execute(&self, shellpath: &ShellPath, history: &[String]) -> Result<OutputPair> {
         let mut last_output = Vec::new();
         let mut last_child: Option<ChildStdout> = None;
         let mut children = Vec::new();
@@ -120,13 +127,15 @@ impl ShellPipeline {
             let is_last = i == self.commands.len() - 1;
             match ShellBuiltin::is_builtin(&args[0]) {
                 Some(builtin) => {
-                    let result = builtin.execute(&args[1..], shellpath).with_context(|| {
-                        format!(
-                            "executing builtin `{:?}` with args {:?}",
-                            builtin,
-                            &args[1..]
-                        )
-                    })?;
+                    let result = builtin
+                        .execute(&args[1..], shellpath, history)
+                        .with_context(|| {
+                            format!(
+                                "executing builtin `{:?}` with args {:?}",
+                                builtin,
+                                &args[1..]
+                            )
+                        })?;
                     match result {
                         CommandOutput::Stdout(out) => last_output = out,
                         CommandOutput::Stderr(_) => return Ok((CommandOutput::Empty, result)),
