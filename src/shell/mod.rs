@@ -5,13 +5,11 @@ mod file;
 mod parser;
 mod utils;
 
-use command::ShellCommand;
+use command::{ShellCommand, ShellPipeline};
 use rustyline::{Editor, config::Configurer, error::ReadlineError, history::FileHistory};
-pub use utils::{CommandOutput, OutputPair, RedirectOp, ShellPath, ShellPathCompleter};
+pub use utils::{CommandOutput, OutputPair, RedirectOp, ShellPath, ShellPathCompleter, split_args};
 
 use anyhow::{Context, Result};
-
-const REDIRECT_OPS: [&str; 7] = ["1>", ">", "1>>", ">>", "2>", "2>>", "|"];
 
 #[derive(Debug)]
 pub struct Repl {
@@ -48,13 +46,17 @@ impl Repl {
 
         loop {
             if let Some((args, redirects)) = self.input().context("reading user input")? {
-                let command = ShellCommand::new(args);
                 if let Some(redirects) = redirects {
                     let (op, redirect_args) = (RedirectOp::parse(&redirects[0]), &redirects[1..]);
 
                     match op {
-                        Some(RedirectOp::Pipe) => todo!(),
+                        Some(RedirectOp::Pipe) => {
+                            let pipeline = ShellPipeline::new(&args, redirect_args);
+                            let outputs = pipeline.execute().context("executing pipeline")?;
+                            self.write(outputs).context("writing to stdout/stderr")?;
+                        }
                         Some(op) => {
+                            let command = ShellCommand::new(args);
                             let outputs = command.execute(&self.shellpath).with_context(|| {
                                 format!(
                                     "executing command `{}` with arguments: {:?}",
@@ -64,11 +66,14 @@ impl Repl {
                             let outputs = file::redirect_output(op, redirect_args, outputs)?;
                             self.write(outputs).context("writing to stdout/stderr")?;
                         }
-                        None => self
-                            .execute_command(command)
-                            .context("executing command - no redirect found")?,
+                        None => {
+                            let command = ShellCommand::new(args);
+                            self.execute_command(command)
+                                .context("executing command - no redirect found")?;
+                        }
                     }
                 } else {
+                    let command = ShellCommand::new(args);
                     self.execute_command(command)
                         .context("executing command - no redirect present")?;
                 }
@@ -124,20 +129,4 @@ impl Repl {
             _ => anyhow::bail!("error parsing input"),
         }
     }
-}
-
-fn split_args(args: &[String]) -> (Vec<String>, Option<Vec<String>>) {
-    if let Some(idx) = args
-        .iter()
-        .rposition(|arg| REDIRECT_OPS.contains(&arg.as_str()))
-    {
-        let (args, redirect) = args.split_at(idx);
-        if redirect.len() < 2 {
-            return (args.to_vec(), None);
-        } else {
-            return (args.to_vec(), Some(redirect.to_vec()));
-        }
-    }
-
-    (args.to_vec(), None)
 }

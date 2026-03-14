@@ -1,7 +1,7 @@
 use crate::shell::{
     ShellPath,
     builtin::ShellBuiltin,
-    utils::{CommandOutput, OutputPair},
+    utils::{CommandOutput, OutputPair, split_args},
 };
 use anyhow::{Context, Result};
 
@@ -80,5 +80,76 @@ impl ShellCommand {
                 )),
             }
         }
+    }
+}
+
+// TODO: Chain the output of one command into the next
+// Pipe stdout and stderr into the next
+#[derive(Debug)]
+pub struct ShellPipeline {
+    commands: Vec<Vec<String>>,
+}
+
+impl ShellPipeline {
+    pub fn new(root: &[String], rest: &[String]) -> Self {
+        let mut commands = Vec::new();
+        commands.push(root.to_vec());
+
+        let mut rest = rest.to_vec();
+        loop {
+            let (cmd, remaining) = split_args(&rest);
+            commands.push(cmd.to_vec());
+            match remaining {
+                Some(r) => rest = r[1..].to_vec(),
+                None => break,
+            }
+        }
+
+        Self { commands }
+    }
+
+    pub fn execute(&self) -> Result<OutputPair> {
+        let mut prev: Option<std::process::Child> = None;
+        for (i, args) in self.commands.iter().enumerate() {
+            let is_last = i == &self.commands.len() - 1;
+            let mut cmd = std::process::Command::new(&args[0]);
+            cmd.args(&args[1..]);
+
+            if let Some(p) = prev.take() {
+                cmd.stdin(p.stdout.expect("should have a stdout"));
+            }
+
+            if !is_last {
+                cmd.stdout(std::process::Stdio::piped());
+                cmd.stderr(std::process::Stdio::piped());
+            }
+
+            prev = Some(cmd.spawn().context("spawning pipeline command")?);
+        }
+
+        let output = match prev {
+            Some(p) => {
+                let output = p
+                    .wait_with_output()
+                    .context("waiting for pipeline output")?;
+
+                let stdout = if output.stdout.is_empty() {
+                    CommandOutput::Empty
+                } else {
+                    CommandOutput::Stdout(output.stdout)
+                };
+
+                let stderr = if output.stderr.is_empty() {
+                    CommandOutput::Empty
+                } else {
+                    CommandOutput::Stderr(output.stderr)
+                };
+
+                (stdout, stderr)
+            }
+            None => (CommandOutput::Empty, CommandOutput::Empty),
+        };
+
+        Ok(output)
     }
 }

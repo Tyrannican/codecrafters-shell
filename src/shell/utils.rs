@@ -7,6 +7,8 @@ use rustyline::{
     completion::{Completer, FilenameCompleter, Pair},
 };
 
+pub const REDIRECT_OPS: [&str; 7] = ["1>", ">", "1>>", ">>", "2>", "2>>", "|"];
+
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum RedirectOp {
     RedirectOut,
@@ -182,4 +184,20 @@ impl Completer for ShellPathCompleter {
             Ok((start, thing))
         }
     }
+}
+
+pub fn split_args(args: &[String]) -> (Vec<String>, Option<Vec<String>>) {
+    if let Some(idx) = args
+        .iter()
+        .position(|arg| REDIRECT_OPS.contains(&arg.as_str()))
+    {
+        let (args, redirect) = args.split_at(idx);
+        if redirect.len() < 2 {
+            return (args.to_vec(), None);
+        } else {
+            return (args.to_vec(), Some(redirect.to_vec()));
+        }
+    }
+
+    (args.to_vec(), None)
 }
