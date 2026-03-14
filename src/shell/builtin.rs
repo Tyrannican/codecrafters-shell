@@ -90,7 +90,7 @@ impl ShellBuiltin {
                     Ok(CommandOutput::Stdout(output.into_bytes()))
                 } else {
                     if let Ok(numbers) = &args[0].parse::<usize>() {
-                        let idx_from = (history.len() - 1) - numbers;
+                        let idx_from = history.len() - numbers;
                         let mut output = entries[idx_from..].join("\n");
                         output.push('\n');
                         Ok(CommandOutput::Stdout(output.clone().into_bytes()))
