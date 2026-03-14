@@ -1,4 +1,7 @@
-use std::io::{self, Write};
+use std::{
+    io::{self, Write},
+    path::PathBuf,
+};
 mod builtin;
 mod command;
 mod file;
@@ -6,7 +9,12 @@ mod parser;
 mod utils;
 
 use command::{ShellCommand, ShellPipeline};
-use rustyline::{Editor, config::Configurer, error::ReadlineError, history::FileHistory};
+use rustyline::{
+    Editor,
+    config::Configurer,
+    error::ReadlineError,
+    history::{FileHistory, History},
+};
 pub use utils::{CommandOutput, OutputPair, RedirectOp, ShellPath, ShellPathCompleter, split_args};
 
 use anyhow::{Context, Result};
@@ -50,12 +58,11 @@ impl Repl {
     pub fn run(&mut self) -> Result<()> {
         loop {
             if let Some((args, redirects)) = self.input().context("reading user input")? {
-                let history = self
-                    .stdin
-                    .history()
-                    .iter()
-                    .map(|s| s.to_string())
-                    .collect::<Vec<String>>();
+                if args[0] == "history" {
+                    let outputs = self.history(&args[1..]).context("history handling")?;
+                    self.write(outputs).context("writing to stdout/stderr")?;
+                    continue;
+                }
 
                 if let Some(redirects) = redirects {
                     let (op, redirect_args) = (RedirectOp::parse(&redirects[0]), &redirects[1..]);
@@ -63,12 +70,12 @@ impl Repl {
                     if let Some(RedirectOp::Pipe) = op {
                         let pipeline = ShellPipeline::new(&args, redirect_args);
                         let outputs = pipeline
-                            .execute(&self.shellpath, &history)
+                            .execute(&self.shellpath)
                             .context("executing pipeline")?;
 
                         self.write(outputs).context("writing to stdout/stderr")?;
                     } else {
-                        let command = ShellCommand::new(args, history);
+                        let command = ShellCommand::new(args);
                         match op {
                             Some(op) => {
                                 let outputs =
@@ -88,7 +95,7 @@ impl Repl {
                         }
                     }
                 } else {
-                    let command = ShellCommand::new(args, history);
+                    let command = ShellCommand::new(args);
                     self.execute_command(command)
                         .context("executing command - no redirect present")?;
                 }
@@ -149,6 +156,50 @@ impl Repl {
                 return Ok(None);
             }
             _ => anyhow::bail!("error parsing input"),
+        }
+    }
+
+    fn history(&mut self, args: &[String]) -> Result<OutputPair> {
+        let history = self.stdin.history();
+        let mut entries = Vec::new();
+        for (idx, entry) in history.iter().enumerate() {
+            entries.push(format!("{} {entry}", idx + 1));
+        }
+
+        if args.is_empty() {
+            let mut output = entries.join("\n");
+            output.push('\n');
+            Ok((
+                CommandOutput::Stdout(output.into_bytes()),
+                CommandOutput::Empty,
+            ))
+        } else {
+            match &*args[0] {
+                "-r" => {
+                    let path = PathBuf::from(&args[1]);
+                    self.stdin.history_mut().load(path.as_path())?;
+                    Ok((CommandOutput::Empty, CommandOutput::Empty))
+                }
+                other => {
+                    if let Ok(numbers) = other.parse::<usize>() {
+                        let limited = entries
+                            .iter()
+                            .rev()
+                            .take(numbers)
+                            .rev()
+                            .map(|s| s.to_string())
+                            .collect::<Vec<String>>();
+                        let mut output = limited.join("\n");
+                        output.push('\n');
+                        Ok((
+                            CommandOutput::Stdout(output.clone().into_bytes()),
+                            CommandOutput::Empty,
+                        ))
+                    } else {
+                        todo!()
+                    }
+                }
+            }
         }
     }
 }
