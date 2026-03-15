@@ -1,6 +1,6 @@
 use std::{
     io::{self, Write},
-    path::PathBuf,
+    path::{Path, PathBuf},
 };
 mod builtin;
 mod command;
@@ -62,6 +62,15 @@ impl Repl {
                     let outputs = self.history(&args[1..]).context("history handling")?;
                     self.write(outputs).context("writing to stdout/stderr")?;
                     continue;
+                } else if args[0] == "exit" {
+                    if let Some(ref history) = self.history {
+                        self.stdin
+                            .save_history(history)
+                            .context("writing out history")?;
+                        self.clean_history(history)
+                            .context("cleaning history output")?;
+                    }
+                    std::process::exit(0);
                 }
 
                 if let Some(redirects) = redirects {
@@ -159,6 +168,14 @@ impl Repl {
         }
     }
 
+    fn clean_history(&self, path: impl AsRef<Path>) -> Result<()> {
+        let contents = std::fs::read_to_string(&path).context("reading history file")?;
+        let cleaned = contents.strip_prefix("#V2\n").unwrap_or(&contents);
+        std::fs::write(&path, cleaned).context("writing history back out")?;
+
+        Ok(())
+    }
+
     fn history(&mut self, args: &[String]) -> Result<OutputPair> {
         let history = self.stdin.history();
         let mut entries = Vec::new();
@@ -191,9 +208,8 @@ impl Repl {
                         .save(&path)
                         .context("writing history file")?;
 
-                    let contents = std::fs::read_to_string(&path)?;
-                    let cleaned = contents.strip_prefix("#V2\n").unwrap_or(&contents);
-                    std::fs::write(&path, cleaned)?;
+                    self.clean_history(path)
+                        .context("cleaning history output")?;
 
                     Ok((CommandOutput::Empty, CommandOutput::Empty))
                 }
@@ -204,9 +220,8 @@ impl Repl {
                         .append(&path)
                         .context("appending to history file")?;
 
-                    let contents = std::fs::read_to_string(&path)?;
-                    let cleaned = contents.strip_prefix("#V2\n").unwrap_or(&contents);
-                    std::fs::write(&path, cleaned)?;
+                    self.clean_history(path)
+                        .context("cleaning history output")?;
 
                     Ok((CommandOutput::Empty, CommandOutput::Empty))
                 }

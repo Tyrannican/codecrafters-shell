@@ -75,25 +75,6 @@ impl ShellBuiltin {
             }
             Self::History => {
                 todo!()
-                // let mut entries = Vec::new();
-                // for (idx, entry) in history.iter().enumerate() {
-                //     entries.push(format!("{} {entry}", idx + 1));
-                // }
-
-                // if args.is_empty() {
-                //     let mut output = entries.join("\n");
-                //     output.push('\n');
-                //     Ok(CommandOutput::Stdout(output.into_bytes()))
-                // } else {
-                //     if let Ok(numbers) = &args[0].parse::<usize>() {
-                //         let idx_from = history.len() - numbers;
-                //         let mut output = entries[idx_from..].join("\n");
-                //         output.push('\n');
-                //         Ok(CommandOutput::Stdout(output.clone().into_bytes()))
-                //     } else {
-                //         todo!()
-                //     }
-                // }
             }
         }
     }
