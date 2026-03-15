@@ -197,6 +197,19 @@ impl Repl {
 
                     Ok((CommandOutput::Empty, CommandOutput::Empty))
                 }
+                "-a" => {
+                    let path = PathBuf::from(&args[1]);
+                    self.stdin
+                        .history_mut()
+                        .append(&path)
+                        .context("appending to history file")?;
+
+                    let contents = std::fs::read_to_string(&path)?;
+                    let cleaned = contents.strip_prefix("#V2\n").unwrap_or(&contents);
+                    std::fs::write(&path, cleaned)?;
+
+                    Ok((CommandOutput::Empty, CommandOutput::Empty))
+                }
                 other => {
                     if let Ok(numbers) = other.parse::<usize>() {
                         let limited = entries
